@@ -99,32 +99,47 @@ SQL QUERY:`;
     const lowerQ = question.toLowerCase();
     const cols: string[] = columnNames || [];
 
+    // Identify categorical column
     const catCol = cols.find((c) =>
       lowerQ.includes(c.toLowerCase()) ||
-      (c.toLowerCase().includes("category") && lowerQ.includes("หมวด")) ||
-      (c.toLowerCase().includes("region") && (lowerQ.includes("ภูมิภาค") || lowerQ.includes("เขต"))) ||
-      (c.toLowerCase().includes("payment") && lowerQ.includes("ชำระ")) ||
-      (c.toLowerCase().includes("diagnosis") && lowerQ.includes("โรค")) ||
-      (c.toLowerCase().includes("hospital") && lowerQ.includes("โรงพยาบาล")) ||
-      (c.toLowerCase().includes("insurance") && lowerQ.includes("ประกัน")) ||
-      (c.toLowerCase().includes("department") && lowerQ.includes("แผนก")) ||
-      (c.toLowerCase().includes("level") && lowerQ.includes("ระดับ")) ||
-      (c.toLowerCase().includes("tier") && lowerQ.includes("แพ็กเกจ")) ||
-      (c.toLowerCase().includes("risk") && (lowerQ.includes("เสี่ยง") || lowerQ.includes("churn")))
-    ) || cols.find((c) => !c.toLowerCase().includes("id") && !c.toLowerCase().includes("date") && !c.toLowerCase().includes("name") && !c.toLowerCase().includes("email") && !c.toLowerCase().includes("phone")) || cols[0] || "Category";
+      (c.toLowerCase().includes("category") && (lowerQ.includes("หมวด") || lowerQ.includes("product") || lowerQ.includes("category"))) ||
+      (c.toLowerCase().includes("region") && (lowerQ.includes("ภูมิภาค") || lowerQ.includes("เขต") || lowerQ.includes("region"))) ||
+      (c.toLowerCase().includes("payment") && (lowerQ.includes("ชำระ") || lowerQ.includes("payment"))) ||
+      (c.toLowerCase().includes("diagnosis") && (lowerQ.includes("โรค") || lowerQ.includes("diagnosis"))) ||
+      (c.toLowerCase().includes("hospital") && (lowerQ.includes("โรงพยาบาล") || lowerQ.includes("hospital"))) ||
+      (c.toLowerCase().includes("insurance") && (lowerQ.includes("ประกัน") || lowerQ.includes("insurance"))) ||
+      (c.toLowerCase().includes("department") && (lowerQ.includes("แผนก") || lowerQ.includes("department"))) ||
+      (c.toLowerCase().includes("level") && (lowerQ.includes("ระดับ") || lowerQ.includes("level"))) ||
+      (c.toLowerCase().includes("tier") && (lowerQ.includes("แพ็กเกจ") || lowerQ.includes("tier"))) ||
+      (c.toLowerCase().includes("risk") && (lowerQ.includes("เสี่ยง") || lowerQ.includes("churn") || lowerQ.includes("risk")))
+    ) || cols.find((c) => !c.toLowerCase().includes("id") && !c.toLowerCase().includes("date") && !c.toLowerCase().includes("revenue") && !c.toLowerCase().includes("cost") && !c.toLowerCase().includes("amount") && !c.toLowerCase().includes("salary") && !c.toLowerCase().includes("name") && !c.toLowerCase().includes("email") && !c.toLowerCase().includes("phone")) || cols[0] || "Category";
 
-    const numCol = cols.find((c) =>
+    // Identify numeric column (strictly different from catCol)
+    const availableNumCols = cols.filter((c) => c !== catCol);
+    const numCol = availableNumCols.find((c) =>
       lowerQ.includes(c.toLowerCase()) ||
-      (c.toLowerCase().includes("revenue") && lowerQ.includes("ยอด")) ||
-      (c.toLowerCase().includes("cost") && lowerQ.includes("ค่ารักษา")) ||
-      (c.toLowerCase().includes("stay") && lowerQ.includes("พักฟื้น")) ||
-      (c.toLowerCase().includes("salary") && lowerQ.includes("เงินเดือน")) ||
-      (c.toLowerCase().includes("bonus") && lowerQ.includes("โบนัส")) ||
-      (c.toLowerCase().includes("score") && lowerQ.includes("คะแนน")) ||
-      (c.toLowerCase().includes("license") && lowerQ.includes("ไลเซนส์")) ||
-      (c.toLowerCase().includes("price") && lowerQ.includes("ราคา")) ||
-      (c.toLowerCase().includes("units") && lowerQ.includes("จำนวน"))
-    ) || cols.find((c) => c.toLowerCase().includes("revenue") || c.toLowerCase().includes("cost") || c.toLowerCase().includes("salary") || c.toLowerCase().includes("bonus") || c.toLowerCase().includes("mrr") || c.toLowerCase().includes("amount") || c.toLowerCase().includes("price")) || cols[cols.length - 1] || "Value";
+      (c.toLowerCase().includes("revenue") && (lowerQ.includes("ยอด") || lowerQ.includes("revenue"))) ||
+      (c.toLowerCase().includes("cost") && (lowerQ.includes("ค่ารักษา") || lowerQ.includes("cost") || lowerQ.includes("ค่าใช้จ่าย"))) ||
+      (c.toLowerCase().includes("stay") && (lowerQ.includes("พักฟื้น") || lowerQ.includes("stay") || lowerQ.includes("วัน"))) ||
+      (c.toLowerCase().includes("salary") && (lowerQ.includes("เงินเดือน") || lowerQ.includes("salary"))) ||
+      (c.toLowerCase().includes("bonus") && (lowerQ.includes("โบนัส") || lowerQ.includes("bonus"))) ||
+      (c.toLowerCase().includes("score") && (lowerQ.includes("คะแนน") || lowerQ.includes("score"))) ||
+      (c.toLowerCase().includes("license") && (lowerQ.includes("ไลเซนส์") || lowerQ.includes("license"))) ||
+      (c.toLowerCase().includes("price") && (lowerQ.includes("ราคา") || lowerQ.includes("price"))) ||
+      (c.toLowerCase().includes("units") && (lowerQ.includes("จำนวน") || lowerQ.includes("units"))) ||
+      (c.toLowerCase().includes("mrr") && lowerQ.includes("mrr"))
+    ) || availableNumCols.find((c) =>
+      c.toLowerCase().includes("revenue") ||
+      c.toLowerCase().includes("cost") ||
+      c.toLowerCase().includes("salary") ||
+      c.toLowerCase().includes("bonus") ||
+      c.toLowerCase().includes("mrr") ||
+      c.toLowerCase().includes("amount") ||
+      c.toLowerCase().includes("price") ||
+      c.toLowerCase().includes("units") ||
+      c.toLowerCase().includes("days") ||
+      c.toLowerCase().includes("score")
+    ) || availableNumCols[availableNumCols.length - 1] || cols[cols.length - 1] || "Value";
 
     let generatedSql = `SELECT "${catCol}", SUM("${numCol}") AS "Total_${numCol}" FROM dataset GROUP BY "${catCol}" ORDER BY "Total_${numCol}" DESC`;
 

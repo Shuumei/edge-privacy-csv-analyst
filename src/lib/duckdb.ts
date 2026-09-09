@@ -29,6 +29,14 @@ export class EdgeSqlEngine {
     }
   }
 
+  private parseNumericValue(val: any): number {
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    if (val === null || val === undefined) return 0;
+    const clean = String(val).replace(/,/g, "").trim();
+    const num = Number(clean);
+    return isNaN(num) ? 0 : num;
+  }
+
   /**
    * Lightweight Tabular SQL Interpreter สำหรับ In-Memory Dataset
    */
@@ -109,22 +117,22 @@ export class EdgeSqlEngine {
           } else if (/sum\s*\((.*?)\)/i.test(rawItem)) {
             const m = rawItem.match(/sum\s*\((.*?)\)/i);
             const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-            const sum = items.reduce((acc, cur) => acc + (Number(cur[col]) || 0), 0);
+            const sum = items.reduce((acc, cur) => acc + this.parseNumericValue(cur[col]), 0);
             rowVals.push(Number(sum.toFixed(2)));
           } else if (/avg\s*\((.*?)\)/i.test(rawItem)) {
             const m = rawItem.match(/avg\s*\((.*?)\)/i);
             const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-            const sum = items.reduce((acc, cur) => acc + (Number(cur[col]) || 0), 0);
+            const sum = items.reduce((acc, cur) => acc + this.parseNumericValue(cur[col]), 0);
             rowVals.push(Number((sum / items.length).toFixed(2)));
           } else if (/max\s*\((.*?)\)/i.test(rawItem)) {
             const m = rawItem.match(/max\s*\((.*?)\)/i);
             const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-            const max = Math.max(...items.map((cur) => Number(cur[col]) || 0));
+            const max = Math.max(...items.map((cur) => this.parseNumericValue(cur[col])));
             rowVals.push(max);
           } else if (/min\s*\((.*?)\)/i.test(rawItem)) {
             const m = rawItem.match(/min\s*\((.*?)\)/i);
             const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-            const min = Math.min(...items.map((cur) => Number(cur[col]) || 0));
+            const min = Math.min(...items.map((cur) => this.parseNumericValue(cur[col])));
             rowVals.push(min);
           } else {
             rowVals.push(items[0][rawItem] ?? null);
@@ -152,13 +160,23 @@ export class EdgeSqlEngine {
             } else if (/sum\s*\((.*?)\)/i.test(item)) {
               const m = item.match(/sum\s*\((.*?)\)/i);
               const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-              const sum = filtered.reduce((acc, cur) => acc + (Number(cur[col]) || 0), 0);
+              const sum = filtered.reduce((acc, cur) => acc + this.parseNumericValue(cur[col]), 0);
               rowVals.push(Number(sum.toFixed(2)));
             } else if (/avg\s*\((.*?)\)/i.test(item)) {
               const m = item.match(/avg\s*\((.*?)\)/i);
               const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-              const sum = filtered.reduce((acc, cur) => acc + (Number(cur[col]) || 0), 0);
+              const sum = filtered.reduce((acc, cur) => acc + this.parseNumericValue(cur[col]), 0);
               rowVals.push(Number((sum / filtered.length).toFixed(2)));
+            } else if (/max\s*\((.*?)\)/i.test(item)) {
+              const m = item.match(/max\s*\((.*?)\)/i);
+              const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+              const max = Math.max(...filtered.map((cur) => this.parseNumericValue(cur[col])));
+              rowVals.push(max);
+            } else if (/min\s*\((.*?)\)/i.test(item)) {
+              const m = item.match(/min\s*\((.*?)\)/i);
+              const col = m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+              const min = Math.min(...filtered.map((cur) => this.parseNumericValue(cur[col])));
+              rowVals.push(min);
             } else {
               rowVals.push(filtered[0]?.[item] ?? null);
             }
@@ -197,28 +215,36 @@ export class EdgeSqlEngine {
     }
 
     let chartSuggestion: QueryExecutionResult["chartSuggestion"] = undefined;
-    if (resultCols.length === 2) {
-      const numericColIdx = resultRows[0]?.findIndex((val) => typeof val === "number");
-      if (numericColIdx !== -1 && numericColIdx !== undefined) {
-        const labelColIdx = numericColIdx === 0 ? 1 : 0;
-        const labelColName = resultCols[labelColIdx].toLowerCase();
-        const isTimeOrDate = /date|month|year|day|time|quarter|period|week|ไตรมาส|ปี|เดือน|วัน/i.test(labelColName);
-        chartSuggestion = {
-          type: isTimeOrDate ? "line" : (resultRows.length <= 6 ? "pie" : "bar"),
-          xKey: resultCols[labelColIdx],
-          yKeys: [resultCols[numericColIdx]],
-          title: `${resultCols[numericColIdx]} by ${resultCols[labelColIdx]}`,
-        };
+    if (resultRows.length > 0) {
+      // Find numeric columns
+      const numericColIndices: number[] = [];
+      const nonNumericColIndices: number[] = [];
+
+      for (let i = 0; i < resultCols.length; i++) {
+        const isNum = resultRows.some((row) => typeof row[i] === "number" || (!isNaN(Number(row[i])) && String(row[i]).trim() !== ""));
+        if (isNum) {
+          numericColIndices.push(i);
+        } else {
+          nonNumericColIndices.push(i);
+        }
       }
-    } else if (resultCols.length > 2) {
-      const firstNum = resultCols.find((c, i) => typeof resultRows[0]?.[i] === "number");
-      if (firstNum) {
-        chartSuggestion = {
-          type: "bar",
-          xKey: resultCols[0],
-          yKeys: [firstNum],
-          title: `${firstNum} by ${resultCols[0]}`,
-        };
+
+      if (numericColIndices.length > 0) {
+        const numIdx = numericColIndices[0];
+        const labelIdx = nonNumericColIndices.length > 0 ? nonNumericColIndices[0] : (numIdx === 0 ? 1 : 0);
+        const labelCol = resultCols[labelIdx] || resultCols[0];
+        const numCol = resultCols[numIdx];
+
+        if (labelCol && numCol && labelCol !== numCol) {
+          const labelColLower = labelCol.toLowerCase();
+          const isTimeOrDate = /date|month|year|day|time|quarter|period|week|ไตรมาส|ปี|เดือน|วัน/i.test(labelColLower);
+          chartSuggestion = {
+            type: isTimeOrDate ? "line" : (resultRows.length <= 6 ? "pie" : "bar"),
+            xKey: labelCol,
+            yKeys: [numCol],
+            title: `${numCol} by ${labelCol}`,
+          };
+        }
       }
     }
 

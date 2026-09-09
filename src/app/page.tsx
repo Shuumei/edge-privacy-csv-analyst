@@ -98,9 +98,10 @@ export default function Home() {
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("sales");
   const [query, setQuery] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [isQueryRunning, setIsQueryRunning] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<string | null>(null);
   const [execResult, setExecResult] = useState<QueryExecutionResult | null>(null);
-  const [viewMode, setViewMode] = useState<string>("table");
+  const [viewMode, setViewMode] = useState<string>("chart");
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [, setLastAuditPayload] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -115,7 +116,7 @@ export default function Home() {
   const [keyToast, setKeyToast] = useState<string | null>(null);
   const chartRef = useRef<any>(null);
 
-  const isQueryLoading = isPending || Boolean(loadingPhase);
+  const isQueryLoading = isPending || isQueryRunning || Boolean(loadingPhase);
 
   const activePreset = SAMPLE_DATASETS.find((d) => d.id === selectedDatasetId);
   const activeQueries = activePreset
@@ -128,7 +129,7 @@ export default function Home() {
     : [];
 
   useEffect(() => {
-    handleLoadSample();
+    handleLoadSample(true);
     try {
       const savedKey = localStorage.getItem("edge_analyst_gemini_key");
       if (savedKey) {
@@ -201,7 +202,7 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  const handleParseCsvString = (csvText: string, fileName: string) => {
+  const handleParseCsvString = (csvText: string, fileName: string, autoRunQuery?: string) => {
     setErrorMsg(null);
     Papa.parse<Record<string, string>>(csvText, {
       header: true,
@@ -218,6 +219,10 @@ export default function Home() {
         const metadata = extractDatasetMetadata(fileName, csvText.length, rows);
         setDataset(metadata);
         setExecResult(null);
+
+        if (autoRunQuery) {
+          handleRunQuery(autoRunQuery, metadata);
+        }
       },
       error: (err: Error) => {
         setErrorMsg(`Parse Error: ${err.message}`);
@@ -237,11 +242,12 @@ export default function Home() {
     reader.readAsText(file);
   };
 
-  const handleSelectDataset = (ds: SampleDatasetOption) => {
+  const handleSelectDataset = (ds: SampleDatasetOption, autoRun = true) => {
     setSelectedDatasetId(ds.id);
-    handleParseCsvString(ds.csv, ds.fileName);
-    setQuery(ds.suggestedQueries[0] || "");
+    const initialQuery = ds.suggestedQueries[0] || "";
+    setQuery(initialQuery);
     setErrorMsg(null);
+    handleParseCsvString(ds.csv, ds.fileName, autoRun ? initialQuery : undefined);
   };
 
   const handleDownloadSampleCsv = (ds: SampleDatasetOption, e: React.MouseEvent) => {
@@ -257,21 +263,23 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
-  const handleLoadSample = () => {
+  const handleLoadSample = (autoRun = true) => {
     const defaultDs = SAMPLE_DATASETS[0];
-    handleSelectDataset(defaultDs);
+    handleSelectDataset(defaultDs, autoRun);
   };
 
-  const handleRunQuery = async (queryToRun?: string) => {
+  const handleRunQuery = async (queryToRun?: string, explicitDataset?: DatasetMetadata | null) => {
     const q = queryToRun || query;
-    if (!q.trim() || !dataset) return;
+    const targetDataset = explicitDataset || dataset;
+    if (!q.trim() || !targetDataset) return;
     setErrorMsg(null);
+    setIsQueryRunning(true);
     setLoadingPhase("llm");
 
     startTransition(async () => {
       try {
-        const anonymizedSchema = createAnonymizedSchemaPrompt(dataset);
-        const columnNames = dataset.columns.map((c) => c.name);
+        const anonymizedSchema = createAnonymizedSchemaPrompt(targetDataset);
+        const columnNames = targetDataset.columns.map((c) => c.name);
 
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
@@ -302,14 +310,13 @@ export default function Home() {
         setLastAuditPayload(data.payloadAudit);
 
         setLoadingPhase("engine");
-        // Give a slight visual beat so user sees engine phase
-        await new Promise((resolve) => setTimeout(resolve, 120));
+        await new Promise((resolve) => setTimeout(resolve, 150));
 
         const result = await edgeSqlEngine.executeSql(data.sql);
 
         if (result.chartSuggestion) {
           setLoadingPhase("chart");
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 150));
         }
 
         setExecResult({
@@ -326,6 +333,7 @@ export default function Home() {
         setErrorMsg(err.message || "การประมวลผลล้มเหลว");
       } finally {
         setLoadingPhase(null);
+        setIsQueryRunning(false);
       }
     });
   };
@@ -348,15 +356,100 @@ export default function Home() {
   };
 
   const renderChart = () => {
-    if (!execResult || !execResult.chartSuggestion) return null;
-    const { type, xKey, yKeys, title } = execResult.chartSuggestion;
-    const xIdx = execResult.columns.indexOf(xKey);
-    const yIdx = execResult.columns.indexOf(yKeys[0]);
+    if (!execResult || execResult.rows.length === 0) {
+      return (
+        <div className="h-[360px] w-full flex flex-col items-center justify-center p-8 bg-slate-50/50 rounded-xl border border-dashed border-slate-300 text-center">
+          <BarChart3 className="w-10 h-10 text-slate-400 mb-3" />
+          <p className="text-sm font-semibold text-slate-700">ไม่มีข้อมูลสำหรับการสร้างกราฟ</p>
+          <p className="text-xs text-muted-foreground mt-1">ลองเลือกคำถามอื่นหรือคลิกเปลี่ยนชุดข้อมูล</p>
+        </div>
+      );
+    }
 
-    if (xIdx === -1 || yIdx === -1) return null;
+    const { columns, rows, chartSuggestion } = execResult;
 
-    const labels = execResult.rows.map((r) => String(r[xIdx] ?? ""));
-    const dataValues = execResult.rows.map((r) => Number(r[yIdx]) || 0);
+    // Resolve column index helper (exact match -> case-insensitive -> partial match)
+    const findColIndex = (targetKey?: string): number => {
+      if (!targetKey) return -1;
+      const cleanTarget = targetKey.replace(/^["']|["']$/g, "").toLowerCase().trim();
+      let idx = columns.findIndex((c) => c.replace(/^["']|["']$/g, "").trim().toLowerCase() === cleanTarget);
+      if (idx !== -1) return idx;
+      // Partial match
+      idx = columns.findIndex((c) => {
+        const cClean = c.replace(/^["']|["']$/g, "").trim().toLowerCase();
+        return cClean.includes(cleanTarget) || cleanTarget.includes(cClean);
+      });
+      return idx;
+    };
+
+    let xIdx = -1;
+    let yIdx = -1;
+    let chartType = chartSuggestion?.type || "bar";
+    let chartTitle = chartSuggestion?.title || "";
+
+    if (chartSuggestion) {
+      xIdx = findColIndex(chartSuggestion.xKey);
+      yIdx = findColIndex(chartSuggestion.yKeys[0]);
+    }
+
+    // Auto-detect columns if suggestion indexing was missing
+    if (xIdx === -1 || yIdx === -1 || xIdx === yIdx) {
+      const numericCols: number[] = [];
+      const categoricalCols: number[] = [];
+
+      columns.forEach((_, colIndex) => {
+        const isNumeric = rows.some((r) => {
+          const val = r[colIndex];
+          if (typeof val === "number") return true;
+          if (val === null || val === undefined) return false;
+          const clean = String(val).replace(/,/g, "").trim();
+          return clean !== "" && !isNaN(Number(clean));
+        });
+        if (isNumeric) {
+          numericCols.push(colIndex);
+        } else {
+          categoricalCols.push(colIndex);
+        }
+      });
+
+      if (numericCols.length > 0) {
+        yIdx = numericCols[0];
+        xIdx = categoricalCols.length > 0 ? categoricalCols[0] : (yIdx === 0 ? 1 : 0);
+        if (xIdx >= columns.length) xIdx = 0;
+      }
+    }
+
+    // If still no valid numeric column exists in this query result
+    if (yIdx === -1 || xIdx === -1 || xIdx === yIdx) {
+      return (
+        <div className="h-[360px] w-full flex flex-col items-center justify-center p-8 bg-slate-50 rounded-xl border border-border text-center">
+          <TableIcon className="w-10 h-10 text-slate-400 mb-3" />
+          <p className="text-sm font-semibold text-slate-800">ผลลัพธ์นี้เหมาะสำหรับการแสดงผลแบบตาราง (Table View)</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">ไม่พบคอลัมน์ตัวเลขหรือสัดส่วนที่เหมาะสำหรับนำมาวาดกราฟ</p>
+          <Button variant="outline" size="sm" onClick={() => setViewMode("table")} className="gap-2">
+            <TableIcon className="w-4 h-4 text-emerald-600" />
+            <span>สลับไปดูตารางข้อมูล</span>
+          </Button>
+        </div>
+      );
+    }
+
+    const xColName = columns[xIdx] || "Category";
+    const yColName = columns[yIdx] || "Value";
+    if (!chartTitle) {
+      chartTitle = `${yColName} by ${xColName}`;
+    }
+
+    const parseVal = (val: any): number => {
+      if (typeof val === "number") return isNaN(val) ? 0 : val;
+      if (val === null || val === undefined) return 0;
+      const clean = String(val).replace(/,/g, "").replace(/[^0-9.-]/g, "").trim();
+      const num = Number(clean);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const labels = rows.map((r) => String(r[xIdx] ?? "-"));
+    const dataValues = rows.map((r) => parseVal(r[yIdx]));
 
     const chartColors = [
       "rgba(16, 185, 129, 0.85)", // Emerald
@@ -365,18 +458,25 @@ export default function Home() {
       "rgba(139, 92, 246, 0.85)",  // Violet
       "rgba(236, 72, 153, 0.85)",  // Pink
       "rgba(14, 165, 233, 0.85)",  // Sky
+      "rgba(20, 184, 166, 0.85)",  // Teal
+      "rgba(249, 115, 22, 0.85)",  // Orange
     ];
 
     const chartData = {
       labels,
       datasets: [
         {
-          label: yKeys[0],
+          label: yColName,
           data: dataValues,
-          backgroundColor: type === "pie" ? chartColors.slice(0, labels.length) : "rgba(16, 185, 129, 0.8)",
-          borderColor: type === "pie" ? "#ffffff" : "#059669",
-          borderWidth: type === "pie" ? 2 : 1,
-          borderRadius: 6,
+          backgroundColor:
+            chartType === "pie"
+              ? chartColors.slice(0, labels.length)
+              : "rgba(16, 185, 129, 0.82)",
+          borderColor: chartType === "pie" ? "#ffffff" : "#059669",
+          borderWidth: chartType === "pie" ? 2 : 1.5,
+          borderRadius: chartType === "bar" ? 6 : 0,
+          fill: chartType === "line",
+          tension: 0.3,
         },
       ],
     };
@@ -386,31 +486,48 @@ export default function Home() {
       maintainAspectRatio: false,
       plugins: {
         legend: {
-          display: type === "pie",
+          display: chartType === "pie",
           labels: { color: "#475569", font: { size: 12 } },
         },
         title: {
           display: true,
-          text: title,
+          text: chartTitle,
           color: "#0f172a",
           font: { size: 14, weight: "bold" as const },
           padding: { bottom: 16 },
         },
+        tooltip: {
+          callbacks: {
+            label: (context: any) => {
+              const label = context.dataset.label || "";
+              const val = context.parsed?.y !== undefined ? context.parsed.y : context.parsed;
+              return ` ${label}: ${Number(val).toLocaleString()}`;
+            },
+          },
+        },
       },
       scales:
-        type === "pie"
+        chartType === "pie"
           ? {}
           : {
               x: { ticks: { color: "#64748b" }, grid: { color: "#f1f5f9" } },
-              y: { ticks: { color: "#64748b" }, grid: { color: "#f1f5f9" } },
+              y: {
+                ticks: {
+                  color: "#64748b",
+                  callback: (val: any) => Number(val).toLocaleString(),
+                },
+                grid: { color: "#f1f5f9" },
+              },
             },
     };
 
+    const dynamicKey = `chart-${chartType}-${xColName}-${yColName}-${rows.length}-${dataValues.reduce((a, b) => a + b, 0)}`;
+
     return (
-      <div className="h-[380px] w-full p-4 bg-white rounded-xl">
-        {type === "bar" && <Bar ref={chartRef} data={chartData} options={options} />}
-        {type === "pie" && <Pie ref={chartRef} data={chartData} options={options} />}
-        {type === "line" && <Line ref={chartRef} data={chartData} options={options} />}
+      <div className="h-[380px] w-full p-4 bg-white rounded-xl relative">
+        {chartType === "bar" && <Bar key={dynamicKey} ref={chartRef} data={chartData} options={options} />}
+        {chartType === "pie" && <Pie key={dynamicKey} ref={chartRef} data={chartData} options={options} />}
+        {chartType === "line" && <Line key={dynamicKey} ref={chartRef} data={chartData} options={options} />}
       </div>
     );
   };
@@ -646,7 +763,7 @@ export default function Home() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={handleLoadSample}
+                    onClick={() => handleLoadSample(true)}
                     className="text-xs text-muted-foreground hover:text-slate-900 gap-1.5 h-8"
                   >
                     <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
@@ -772,8 +889,8 @@ export default function Home() {
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !isPending && handleRunQuery()}
-                  disabled={isPending}
+                  onKeyDown={(e) => e.key === "Enter" && !isQueryLoading && handleRunQuery()}
+                  disabled={isQueryLoading}
                   placeholder={
                     activeQueries[0]
                       ? `เช่น ${activeQueries[0]}`
@@ -784,11 +901,11 @@ export default function Home() {
               </div>
               <Button
                 onClick={() => handleRunQuery()}
-                disabled={isPending || !dataset}
+                disabled={isQueryLoading || !dataset}
                 size="lg"
                 className="h-12 gap-2 text-sm sm:text-base font-semibold px-6 shadow-sm shrink-0"
               >
-                {isPending ? (
+                {isQueryLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>กำลังวิเคราะห์...</span>
@@ -816,7 +933,7 @@ export default function Home() {
                   key={idx}
                   variant="outline"
                   size="sm"
-                  disabled={isPending}
+                  disabled={isQueryLoading}
                   onClick={() => {
                     setQuery(qText);
                     handleRunQuery(qText);
@@ -838,7 +955,7 @@ export default function Home() {
         </Card>
 
         {/* Section 5: Loading State Card (When Query or Chart is Generating) */}
-        {isPending && (
+        {isQueryLoading && (
           <Card className="shadow-md border-2 border-emerald-500/40 overflow-hidden bg-white animate-in fade-in duration-200">
             <CardHeader className="p-5 sm:p-6 border-b border-emerald-100 bg-emerald-50/40">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -993,7 +1110,7 @@ export default function Home() {
         )}
 
         {/* Section 5: Query Execution Result (Table & Chart) */}
-        {!isPending && execResult && (
+        {!isQueryLoading && execResult && (
           <Card className="shadow-xs overflow-hidden border-border bg-white">
             <CardHeader className="p-4 sm:p-5 border-b border-border/80 bg-slate-50/80">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1107,7 +1224,7 @@ export default function Home() {
         )}
 
         {/* Section 6: First 5 Rows Preview (Auto-Masked) */}
-        {dataset && dataset.samplePreview.length > 0 && !execResult && !isPending && (
+        {dataset && dataset.samplePreview.length > 0 && !execResult && !isQueryLoading && (
           <Card className="shadow-xs border-border bg-white">
             <CardHeader className="p-5 sm:p-6 pb-3">
               <div className="flex items-center justify-between">
