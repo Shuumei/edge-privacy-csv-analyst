@@ -418,83 +418,82 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16">
       {/* Navigation Header */}
-      <header className="border-b border-border/80 bg-white/95 backdrop-blur-xs sticky top-0 z-30 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-2xs">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                Privacy-Preserving Edge CSV Analyst
-              </h1>
-              <Badge variant="success">PDPA Zero-Egress</Badge>
+      <header className="border-b border-border/80 bg-white/95 backdrop-blur-xs sticky top-0 z-30 px-4 sm:px-6 py-3 transition-all">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-2xs shrink-0">
+              <ShieldCheck className="w-5 h-5" />
             </div>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              ระบบวิเคราะห์ข้อมูลตารางในหน่วยความจำเบราว์เซอร์ 100% โดยไม่ส่งแถวข้อมูลขึ้น Cloud
-            </p>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 tracking-tight">
+                  Privacy-Preserving Edge CSV Analyst
+                </h1>
+                <Badge variant="success" className="text-[10px] sm:text-xs shrink-0">PDPA Zero-Egress</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground hidden sm:block">
+                ระบบวิเคราะห์ข้อมูลตารางในหน่วยความจำเบราว์เซอร์ 100% โดยไม่ส่งแถวข้อมูลขึ้น Cloud
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2.5">
-          {keyToast && (
-            <Badge variant="success" className="hidden sm:flex items-center gap-1.5 py-1 px-3">
-              <Check className="w-3.5 h-3.5" />
-              <span>{keyToast}</span>
-            </Badge>
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setTempApiKey(customApiKey);
-              setTempModel(selectedModel);
-              setShowKeyText(false);
-              setIsKeyModalOpen(true);
-            }}
-            title="ตั้งค่า Gemini API Key และเลือกรุ่นโมเดล (BYOK)"
-            className="gap-2"
-          >
-            <Key className={`w-4 h-4 ${customApiKey ? "text-emerald-600" : "text-slate-400"}`} />
-            <span>API Key & Model</span>
-            {customApiKey ? (
-              <Badge variant="success" className="px-1.5 py-0 text-[11px] font-mono">
-                {selectedModel === "gemini-2.5-flash-lite" ? "2.5 Lite" : "2.5 Flash"}
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="px-1.5 py-0 text-[11px] font-mono text-slate-500">
-                Default ({selectedModel === "gemini-2.5-flash-lite" ? "2.5 Lite" : "2.5 Flash"})
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
+            {keyToast && (
+              <Badge variant="success" className="hidden lg:flex items-center gap-1.5 py-1 px-3 text-xs">
+                <Check className="w-3.5 h-3.5" />
+                <span>{keyToast}</span>
               </Badge>
             )}
-          </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsInspectorOpen(true)}
-            className="gap-2"
-          >
-            <Lock className="w-4 h-4 text-emerald-600" />
-            <span>Audit Network (0 Raw Rows)</span>
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTempApiKey(customApiKey);
+                setTempModel(selectedModel);
+                setShowKeyText(false);
+                setIsKeyModalOpen(true);
+              }}
+              title="ตั้งค่า Gemini API Key และเลือกรุ่นโมเดล (BYOK)"
+              className="h-9 px-3 text-xs sm:text-sm font-medium gap-1.5 rounded-lg border-slate-200 bg-white hover:bg-slate-50 shadow-2xs whitespace-nowrap"
+            >
+              <Key className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${customApiKey ? "text-emerald-600" : "text-slate-400"} shrink-0`} />
+              <span className="hidden sm:inline">API Key & Model</span>
+              <span className="sm:hidden">API Key</span>
+              {customApiKey ? (
+                <Badge variant="success" className="px-1.5 py-0 text-[10px] sm:text-[11px] font-mono shrink-0">
+                  {selectedModel === "gemini-2.5-flash-lite" ? "2.5 Lite" : "2.5 Flash"}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="px-1.5 py-0 text-[10px] sm:text-[11px] font-mono text-slate-500 shrink-0">
+                  Default ({selectedModel === "gemini-2.5-flash-lite" ? "Lite" : "Flash"})
+                </Badge>
+              )}
+            </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            asChild
-            className="gap-2"
-          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsInspectorOpen(true)}
+              className="h-9 px-3 text-xs sm:text-sm font-medium gap-1.5 rounded-lg border-slate-200 bg-white hover:bg-slate-50 shadow-2xs whitespace-nowrap"
+            >
+              <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
+              <span className="hidden md:inline">Audit Network (0 Raw Rows)</span>
+              <span className="md:hidden">Audit Network</span>
+            </Button>
+
             <a
               href="https://github.com/Shuumei/edge-privacy-csv-analyst"
               target="_blank"
               rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 h-9 px-3 text-xs sm:text-sm font-medium rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 transition-colors shadow-2xs whitespace-nowrap shrink-0"
+              title="ดูซอร์สโค้ดบน GitHub"
             >
-              <Code2 className="w-4 h-4 text-slate-500" />
+              <Code2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />
               <span>GitHub</span>
-              <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+              <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
             </a>
-          </Button>
+          </div>
         </div>
       </header>
 
